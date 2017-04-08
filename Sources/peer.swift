@@ -20,8 +20,9 @@ public final class Peer : IDisposable
 	{
 		self.socket = socket
 		DispatchQueue.global().async {
-			let data = socket.read(1024)
-			self.stream.publish(Message(source: "TODO", content: String(data: data!, encoding: .utf8)!))
+			while self.socket.isValid, let data = self.socket.read(maxBytes: 1024) {
+				self.stream.publish(Message(source: "TODO", content: String(data: data, encoding: .utf8)!))
+			}
 		}
 	}
 
