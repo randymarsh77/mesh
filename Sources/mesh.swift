@@ -5,7 +5,7 @@ import Scope
 import Sockets
 import Streams
 
-let MeshPort: UInt16 = 6374
+let MeshServerOptions = ServerOptions(port: .Range(6300, 6400))
 let MeshServiceType: ServiceType = .Unregistered(identifier: "mesh")
 
 public class Mesh
@@ -27,11 +27,11 @@ public class Mesh
 		}
 
 		// listen and broadcast
-		server = TCPServer(port: MeshPort) { (socket) in
+		server = try! TCPServer(options: MeshServerOptions) { (socket) in
 			let peer = PeerHandshakeUtility.HandshakeIncoming(socket)
 			self.add(peer)
 		}
-		let broadcastSettings = BroadcastSettings(name: bonjourName, serviceType: MeshServiceType, serviceProtocol: .TCP, domain: .AnyDomain, port: Int32(MeshPort))
+		let broadcastSettings = BroadcastSettings(name: bonjourName, serviceType: MeshServiceType, serviceProtocol: .TCP, domain: .AnyDomain, port: Int32(server!.port))
 		broadcastScope = Bonjour.Broadcast(broadcastSettings)
 
 		// connect to all known peers (4 now)
