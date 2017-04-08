@@ -6,7 +6,7 @@ import Sockets
 import Streams
 
 let MeshServerOptions = ServerOptions(port: .Range(6300, 6400))
-let MeshServiceType: ServiceType = .Unregistered(identifier: "mesh")
+let MeshServiceType: ServiceType = .Unregistered(identifier: "_mesh")
 
 public class Mesh
 {
