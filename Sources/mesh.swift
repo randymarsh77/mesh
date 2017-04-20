@@ -8,16 +8,27 @@ import Streams
 let MeshServerOptions = ServerOptions(port: .Range(6300, 6400))
 let MeshServiceType: ServiceType = .Unregistered(identifier: "_mesh")
 
+public struct MeshSettings
+{
+	public init(name: String) {
+		self.name = name
+	}
+
+	public let name: String
+}
+
 public class Mesh
 {
-	public let nodeId = UUID().uuidString
-	public var bonjourName: String { return "_mesh-node-\(nodeId)" }
+	public let settings: MeshSettings
+	public let nodeId = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+	public var bonjourName: String { return "\(settings.name)-\(nodeId)" }
 	public var messageStream: ReadableStream<Message> { return ReadableStream(stream) }
 
 	var stream = Streams.Stream<Message>()
 
-	public init()
+	public init(settings: MeshSettings)
 	{
+		self.settings = settings
 	}
 
 	public func activate()
@@ -28,8 +39,9 @@ public class Mesh
 
 		// listen and broadcast
 		server = try! TCPServer(options: MeshServerOptions) { (socket) in
-			let peer = PeerHandshakeUtility.HandshakeIncoming(socket)
-			self.add(peer)
+			if let peer = PeerHandshakeUtility.HandshakeIncoming(socket, Node(id: "Unknown", address: .Socket(socket.address))) {
+				self.add(peer)
+			}
 		}
 		let broadcastSettings = BroadcastSettings(name: bonjourName, serviceType: MeshServiceType, serviceProtocol: .TCP, domain: .AnyDomain, port: Int32(server!.port))
 		broadcastScope = Bonjour.Broadcast(broadcastSettings)
@@ -44,8 +56,9 @@ public class Mesh
 					continue
 				}
 
-				let peer = self.connect(service)
-				self.add(peer)
+				if let peer = self.connect(service) {
+					self.add(peer)
+				}
 			}
 		}
 	}
@@ -61,7 +74,7 @@ public class Mesh
 		for peer in peers {
 			peer.dispose()
 		}
-		peers = [Peer]()
+		peers = [ConnectedPeer]()
 	}
 
 	public func notify(message: String)
@@ -71,25 +84,32 @@ public class Mesh
 		}
 	}
 
-	private func add(_ peer: Peer?)
+	private func add(_ peer: ConnectedPeer)
 	{
-		if (peer != nil) {
-			DispatchQueue.main.async {
-				self.peers.append(peer!)
-				_ = peer!.messageStream.pipe(to: self.stream)
+		DispatchQueue.main.async {
+			self.peers.append(peer)
+			_ = peer.messageStream.pipe(to: self.stream)
+			_ = peer.messageStream.on { event in
+				switch (event) {
+				case .Disconnected:
+					if let index = self.peers.index(where: { x in x === peer }) {
+						self.peers.remove(at: index)
+						peer.dispose()
+					}
+				}
 			}
 		}
 	}
 
-	private func connect(_ service: NetService) -> Peer?
+	private func connect(_ service: NetService) -> ConnectedPeer?
 	{
 		let endpoint = service.getEndpointAddress()!
 		let client = TCPClient(endpoint: endpoint)
 		let socket = try! client.tryConnect()!
-		return PeerHandshakeUtility.HandshakeOutgoing(socket)
+		return PeerHandshakeUtility.HandshakeOutgoing(socket, Node(id: service.name, address: .Socket(socket.address)))
 	}
 
-	private var peers = [Peer]()
+	private var peers = [ConnectedPeer]()
 	private var broadcastScope: Scope?
 	private var server: TCPServer?
 }
